@@ -1,0 +1,12 @@
+matplotlib
+numpy
+pandas
+Pillow
+pyeit
+PyWavelets
+scikit_learn
+scipy
+seaborn
+tensorflow
+tikzplotlib
+ultralytics
