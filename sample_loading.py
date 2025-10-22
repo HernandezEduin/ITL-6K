@@ -9,13 +9,10 @@ directory layout where each experiment has a `voltage.csv` and a
 The script is intentionally small and focused on showing the expected data
 shapes and simple visualization; it is *not* an optimized data pipeline.
 """
-
-import os
-import numpy as np
-import matplotlib.pyplot as plt
 import argparse
+import matplotlib.pyplot as plt
 
-from utils.dataloader import read_voltage, load_image
+from utils.dataloader import load_eit_dataset
 
 def read_options() -> argparse.Namespace:
     """Parse and return command-line options.
@@ -48,39 +45,15 @@ if __name__ == "__main__":
 
     args = read_options()
 
-    # ------------------------------------------------------------------
-    # Prepare empty containers for stacking loaded data from multiple
-    # experiments. We start with zero-sized arrays and vertically stack
-    # each experiment's data using `np.vstack` below.
-    # ------------------------------------------------------------------
-    # Image shape: (N, H, W) where N will grow as we append experiments
-    img_shape = (0, args.resolution, args.resolution)
-    # Voltage shape: (N, pins, samples_per_pin)
-    voltage_shape = (0, args.num_pins, args.sampling_rate * args.num_pins)
-
-    images = np.empty(img_shape, dtype=int)
-    voltage_data = np.empty(voltage_shape, dtype=int)
-
-    # Loop over requested experiment folders and load data
-    for folder in args.experiments:
-        # `index` is a list of sample indices to load for this experiment.
-        # `offset_num` is used because some datasets may reserve the first
-        # N rows for metadata or a different numbering scheme.
-        index = np.arange(args.offset_num, args.num_samples + args.offset_num).tolist()
-
-        exp_path = os.path.join(args.data_path, folder)
-        voltage_path = os.path.join(exp_path, 'voltage.csv')
-        img_path = os.path.join(exp_path, 'label_vector')
-
-        # Read voltage time-series for the requested indices. `read_voltage`
-        # is expected to return (data_array, updated_index) where `data_array`
-        # has shape (n_samples, n_pins, n_timepoints).
-        data, index = read_voltage(voltage_path, index)
-        voltage_data = np.vstack((voltage_data, data))
-
-        # Read the binarized label vectors (images) for the same indices.
-        # `load_image` should return an array shaped (n_samples, H, W).
-        images = np.vstack((images, load_image(img_path, index, args.offset_num)))
+    voltage_data, images = load_eit_dataset(
+        data_path=args.data_path,
+        experiments=args.experiments,
+        num_samples=args.num_samples,
+        offset_num=args.offset_num,
+        num_pins=args.num_pins,
+        resolution=args.resolution,
+        sampling_rate=args.sampling_rate
+    )
 
     # Print shapes so the user can verify successful loading
     print(f"Voltage data shape: {voltage_data.shape}")
