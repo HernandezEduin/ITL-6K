@@ -155,7 +155,6 @@ if __name__ == "__main__":
     print(f"Train dataset samples: {x_train.shape[0]}, Test dataset samples: {x_test.shape[0]}")
     print(f"Train dataset batches: {len(train_dataset)}, Test dataset batches: {len(test_dataset)}")
     
-    sys.exit()
     # -------------------------------------------------------------------
     # Compiling Model and Optimizer
 
