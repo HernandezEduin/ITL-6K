@@ -45,7 +45,7 @@ if __name__ == "__main__":
 
     args = read_options()
 
-    voltage_data, images = load_eit_dataset(
+    voltage_data, images, exp_info = load_eit_dataset(
         data_path=args.data_path,
         experiments=args.experiments,
         num_samples=args.num_samples,
@@ -58,6 +58,7 @@ if __name__ == "__main__":
     # Print shapes so the user can verify successful loading
     print(f"Voltage data shape: {voltage_data.shape}")
     print(f"Images shape: {images.shape}")
+    print(f"Experiment info shape: {exp_info.shape}")
 
     # ------------------------------------------------------------------
     # Quick visualization of a single sample. This is intended for sanity

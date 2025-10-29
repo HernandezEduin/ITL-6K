@@ -1,4 +1,5 @@
 import os
+import json
 import csv
 import numpy as np
 import cv2
@@ -76,6 +77,19 @@ def load_image(folderpath: str, index: List[int], offset_num: int = 0) -> np.nda
     images = np.array([cv2.imread(os.path.join(folderpath, f"label{i0 - offset_num}.jpg"), 0) for i0 in index], dtype=int)
     return images
 
+def read_experiment_info(filepath: str) -> dict:
+    """
+    Read experiment metadata from a JSON file.
+    Args:
+        filepath (str): The path to the JSON file containing experiment info.
+    Returns:
+        dict: A dictionary containing the experiment metadata.
+    """
+    assert os.path.isfile(filepath), f"Error! {filepath} does not exist or is not a file!"
+    with open(filepath, 'r') as f:
+        info = json.load(f)
+    return info
+
 def load_eit_dataset(
     data_path: str, 
     experiments: List[str], 
@@ -84,7 +98,7 @@ def load_eit_dataset(
     num_pins: int, 
     resolution: int, 
     sampling_rate: int
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Load voltage time-series and corresponding label images from multiple
     experiment subfolders. This function centralizes the loading logic so
@@ -113,6 +127,9 @@ def load_eit_dataset(
         (float values as read from CSV).
     - images: np.ndarray shaped (N_total, resolution, resolution) containing
         the corresponding label images loaded from the `label_vector` dir.
+    - exp_info: np.ndarray shaped (N_total,) containing experiment metadata
+        dictionaries loaded from each experiment's `info.json` file. Each
+        entry corresponds to one sample in `voltage_data` and `images`.
 
     Behavior and notes
     - The function constructs an `index` list per experiment using
@@ -139,6 +156,7 @@ def load_eit_dataset(
 
     images = np.empty(img_shape, dtype=int)
     voltage_data = np.empty(voltage_shape, dtype=int)
+    exp_info = np.empty((0,), dtype=object)
 
     # Loop over requested experiment folders and load data
     for folder in experiments:
@@ -150,12 +168,14 @@ def load_eit_dataset(
         exp_path = os.path.join(data_path, folder)
         voltage_path = os.path.join(exp_path, 'voltage.csv')
         img_path = os.path.join(exp_path, 'label_vector')
+        info_path = os.path.join(exp_path, 'info.json')
         # Read voltage time-series for the requested indices. `read_voltage`
         # returns a tuple: (list_of_arrays, filtered_index_list). The
         # returned `data` is a list (or array) of shape
         # (n_samples_found, n_pins, n_timepoints). The filtered `index`
         # contains only indices that were present/parsed successfully.
         data, index = read_voltage(voltage_path, index)
+
         # Stack vertically to append this experiment's samples. We rely on
         # numpy broadcasting of empty arrays initialized above.
         voltage_data = np.vstack((voltage_data, data))
@@ -166,4 +186,9 @@ def load_eit_dataset(
         # voltage data ordering.
         images = np.vstack((images, load_image(img_path, index, offset_num)))
 
-    return voltage_data, images
+        # Read experiment metadata from the info.json file.
+        info = read_experiment_info(info_path)
+        info = np.repeat(info, len(data))
+        exp_info = np.concatenate((exp_info, info))
+
+    return voltage_data, images, exp_info

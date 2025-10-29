@@ -1,5 +1,6 @@
 import os
 import argparse
+import sys
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -32,7 +33,7 @@ def read_options() -> argparse.Namespace:
     # Data loading parameters
     parser.add_argument('--data-path', type=str, default='./data', help='Root data directory')
     parser.add_argument('-e', '--experiments', nargs='+', 
-                        default = ['1022.4'],
+                        default = ['1022.1', '1022.4'],
                         # default=['1022.1', '1022.2', '1022.3', '1022.4', '1024.5', '1024.6', '1024.7', '1025.8'],
                         help='List of experiment folder names to load (space separated)')
     parser.add_argument('--num-samples', type=int, default=722, help='Total number of samples per experiment')
@@ -53,6 +54,10 @@ def read_options() -> argparse.Namespace:
     parser.add_argument('--epochs', type=int, default=1000, help='Number of training epochs')
     parser.add_argument('--loss', type=str, choices=['mse', 'binary_crossentropy'], default='binary_crossentropy',
                         help='Loss function to use during training')
+    parser.add_argument('--training-circles-num', type=str, default='all', choices=['all', '1', '2', '3', '4'],
+                        help='Number of circles to include in training data (all or specific number)')
+    parser.add_argument('--testing-circles-num', type=str, default='all', choices=['all', '1', '2', '3', '4'],
+                        help='Number of circles to include in testing data (all or specific number)')
     
     # Model loading parameters
     parser.add_argument('--checkpoint-dir', type=str, default='./checkpoints', help='Directory to save/load model checkpoints')
@@ -74,7 +79,7 @@ if __name__ == "__main__":
     #------------------------------------------------------------------
     # Loading Samples
 
-    voltage_data, images = load_eit_dataset(
+    voltage_data, images, exp_info = load_eit_dataset(
         data_path=args.data_path,
         experiments=args.experiments,
         num_samples=args.num_samples,
@@ -89,6 +94,7 @@ if __name__ == "__main__":
     # Print shapes so the user can verify successful loading
     print(f"Voltage data shape: {voltage_data.shape}")
     print(f"Images shape: {images.shape}")
+    print(f"Exp info shape: {exp_info.shape}")
 
     # ------------------------------------------------------------------
     # Processing of Images
@@ -98,12 +104,33 @@ if __name__ == "__main__":
     # ------------------------------------------------------------------
     # Splits
 
-    x_train, x_test, y_train, y_test = train_test_split(
-        voltage_data, 
-        images, 
-        test_size=args.test_size, 
-        random_state=args.seed # not included by set_seeds function
-    ) # split the dataset
+    x_train, x_test, y_train, y_test, exp_info_train, exp_info_test = train_test_split(
+        voltage_data,
+        images,
+        exp_info,
+        test_size=args.test_size,
+        random_state=args.seed  # not included by set_seeds function
+    )  # split the dataset
+
+    # Get all indices from exp_info_train based on training_circles_num
+    if args.training_circles_num != 'all':
+        print(f"Limiting training data to samples with {args.training_circles_num} circles.")
+        num_circles = int(args.training_circles_num)
+        selected_indices = [i for i, info in enumerate(exp_info_train) if info['circles'] == num_circles]
+
+        x_train = x_train[selected_indices]
+        y_train = y_train[selected_indices]
+        exp_info_train = exp_info_train[selected_indices]
+    
+    # Get all indices from exp_info_test based on testing_circles_num
+    if args.testing_circles_num != 'all':
+        print(f"Limiting testing data to samples with {args.testing_circles_num} circles.")
+        num_circles = int(args.testing_circles_num)
+        selected_indices = [i for i, info in enumerate(exp_info_test) if info['circles'] == num_circles]
+
+        x_test = x_test[selected_indices]
+        y_test = y_test[selected_indices]
+        exp_info_test = exp_info_test[selected_indices]
 
     # normalization values (along sample and time axis)
     mean = x_train.mean(axis=(0,2), keepdims = True)
