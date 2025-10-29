@@ -1,5 +1,6 @@
 import os
 import argparse
+import json
 import sys
 
 import numpy as np
@@ -241,3 +242,16 @@ if __name__ == "__main__":
 
     print("Confusion Matrix:")
     print(confusion_matrix)
+
+    # save metrics and confusion matrix
+    if args.save_model or args.load_model:
+        if args.save_model: path = os.path.join(args.checkpoint_dir, args.save_model_folder)
+        elif args.load_model: path = os.path.join(args.checkpoint_dir, args.load_model_folder)
+
+        metrics_path = os.path.join(path, 'metrics.json')
+        with open(metrics_path, 'w') as f:
+            json.dump(metrics, f, indent=4)
+
+        confusion_matrix_path = os.path.join(path, 'confusion_matrix.txt')
+        with open(confusion_matrix_path, 'w') as f:
+            f.write(np.array2string(confusion_matrix))
