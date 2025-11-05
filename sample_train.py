@@ -13,6 +13,7 @@ from tensorflow.keras.models import load_model
 
 from utils.setup import set_seeds
 from utils.dataloader import load_eit_dataset
+from utils.filters import bandpass_filter, pca_transform, savitzky_filter, wavelet_filter
 from utils.metrics import reconstruct_image, compute_segmentation_metrics, compute_confusion_matrix
 from utils.metrics import compute_MSE, compute_CNR, compute_SSIM_batch
 from models.image_reconstruction import Voltage2Image
@@ -51,6 +52,14 @@ def read_options() -> argparse.Namespace:
     parser.add_argument('--seed', type=int, default=42, help='Random seed for data splitting.')
     parser.add_argument('--binary-threshold', type=float, default=0.5, help='Threshold to binarize the images')
 
+    # Data filtering parameters
+    parser.add_argument('--use-bandpass', action='store_true', help='Apply Adaptive Bandpass filtering to the voltage data before training.')
+    parser.add_argument('--use-pca', action='store_true', help='Apply PCA filtering to the voltage data before training.')
+    parser.add_argument('--pca-components', type=int, default=16*128, help='Number of PCA components to keep if PCA filtering is used.')
+    parser.add_argument('--use-savgol', action='store_true', help='Apply Savitzky-Golay filtering to the voltage data before training.')
+    parser.add_argument('--use-wavelet', action='store_true', help='Apply Wavelet denoising to the voltage data before training.')
+
+
     # Model training parameters
     parser.add_argument('--learning-rate', type=float, default=0.001, help='Learning rate for the optimizer')
     parser.add_argument('--epochs', type=int, default=1000, help='Number of training epochs')
@@ -81,6 +90,11 @@ def read_options() -> argparse.Namespace:
 if __name__ == "__main__":
 
     args = read_options()
+
+    print('='*20)
+    for key, value in vars(args).items():
+        print(f"\t{key}: {value}")
+    print('='*20)
 
     set_seeds(args.seed)
 
@@ -129,6 +143,24 @@ if __name__ == "__main__":
     x_train = (x_train - mean) / var
     x_test = (x_test - mean) / var
 
+    data_shape = x_train.shape
+
+    if args.use_bandpass:
+        x_train = bandpass_filter(x_train.copy())
+        x_test = bandpass_filter(x_test.copy())
+    
+    if args.use_savgol:
+        x_train = savitzky_filter(x_train)
+        x_test = savitzky_filter(x_test)
+
+    if args.use_wavelet:
+        x_train = wavelet_filter(x_train)
+        x_test = wavelet_filter(x_test)
+
+    if args.use_pca:
+        x_train, x_test = pca_transform(x_train, x_test, n=args.pca_components)
+        data_shape = x_train.shape
+
     # Use only samples with specified number of circles for training/testing
     if args.training_circles_num != 'all':
         print(f"Limiting training data to samples with {args.training_circles_num} circles.")
@@ -169,14 +201,16 @@ if __name__ == "__main__":
         print("Loading model from:", load_path)
 
         model = load_model(load_path)
+
+        print(f"Model loaded. Summary: {model.summary()}")
     else:
         model = Voltage2Image(
-            input_shape=voltage_data.shape[1:], 
+            input_shape=data_shape[1:], 
             output_shape=images.shape[1:]
         )
     
         model.build(
-            voltage_data.shape
+            data_shape
         )
 
         model.compile(
