@@ -218,11 +218,10 @@ if __name__ == "__main__":
         callbacks = [
             SchedulerandTrackerCallback(),
             tf.keras.callbacks.ModelCheckpoint(
-                filepath=os.path.join(args.checkpoint_dir, args.args.save_model_folder + '_epoch{epoch:03d}.keras'),
+                filepath=os.path.join(args.checkpoint_dir, f'{args.save_model_folder}_epoch{{epoch:03d}}', f'{args.save_model_folder}_epoch{{epoch:03d}}.keras'),
                 save_weights_only=False,
                 save_best_only=False,
-                save_freq='epoch',
-                period=args.save_every  # Save every N epochs
+                save_freq=args.save_every * len(train_dataset),  # Save every N epochs
             )
         ]
     else:
