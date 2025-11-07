@@ -14,8 +14,8 @@ from tensorflow.keras.models import load_model
 from utils.setup import set_seeds
 from utils.dataloader import load_eit_dataset
 from utils.filters import bandpass_filter, pca_transform, savitzky_filter, wavelet_filter
-from utils.metrics import reconstruct_image, compute_segmentation_metrics, compute_confusion_matrix
-from utils.metrics import compute_MSE, compute_CNR, compute_SSIM_batch
+from utils.metrics import compute_SSIM, reconstruct_image, compute_segmentation_metrics, compute_confusion_matrix
+from utils.metrics import compute_MSE, compute_CNR, compute_PSNR, compute_SSIM, compute_SSIM_batch
 from models.image_reconstruction import Voltage2Image
 from models.schedulers import SchedulerandTrackerCallback
 
@@ -73,12 +73,12 @@ def read_options() -> argparse.Namespace:
     # Model loading parameters
     parser.add_argument('--checkpoint-dir', type=str, default='./checkpoints', help='Directory to save/load model checkpoints')
     parser.add_argument('-l', '--load-model', action='store_true', help='Flag to load a pre-trained model')
-    parser.add_argument('--load-model-folder', type=str, default='modeloriginal.h5', help='Folder name to load the pre-trained model from')
+    parser.add_argument('--load-model-folder', type=str, default='modeloriginal', help='Folder name to load the pre-trained model from')
 
     parser.add_argument('-s', '--save-model', action='store_true', help='Flag to save the trained model')
     parser.add_argument('-m', '--save-multi-checkpoint', action='store_true', help='Flag to save the model at regular intervals during training')
     parser.add_argument('--save-every', type=int, default=100, help='Save the model every N epochs if --save-multi-checkpoint is set')
-    parser.add_argument('--save-model-folder', type=str, default='modeloriginal.h5', help='Folder name to save the trained model to')
+    parser.add_argument('--save-model-folder', type=str, default='modeloriginal', help='Folder name to save the trained model to')
 
     # Caching options to speed up repeated experiments
     parser.add_argument('--use-cache', action='store_true', help='Load preprocessed data from cache if available')
@@ -192,18 +192,6 @@ if __name__ == "__main__":
     # -------------------------------------------------------------------
     # Compiling Model and Optimizer
 
-    gpus = tf.config.experimental.list_physical_devices('GPU')
-    if gpus:
-        try:
-            # Currently, memory growth needs to be the same across GPUs
-            for gpu in gpus:
-                tf.config.experimental.set_memory_growth(gpu, True)
-            logical_gpus = tf.config.experimental.list_logical_devices('GPU')
-            print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
-        except RuntimeError as e:
-            # Memory growth must be set before GPUs have been initialized
-            print(e)
-
     lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
         initial_learning_rate=args.learning_rate,
         decay_steps=500,
@@ -303,6 +291,16 @@ if __name__ == "__main__":
     metrics["CNR"] = compute_CNR(
         binary_reconstructions,
         y_test,
+    )
+
+    metrics["PSNR"] = compute_PSNR(
+        reconstructed_images,
+        y_test
+    )
+
+    metrics["SSIM-1"] = compute_SSIM(
+        reconstructed_images,
+        y_test
     )
 
     metrics["SSIM"] = compute_SSIM_batch(

@@ -1,7 +1,8 @@
 import numpy as np
 import tensorflow as tf
 
-from sklearn.metrics import precision_score, recall_score, f1_score, accuracy_score, confusion_matrix
+from sklearn.metrics import precision_score, recall_score, f1_score, jaccard_score, confusion_matrix
+from skimage.metrics import peak_signal_noise_ratio, structural_similarity
 
 from typing import Dict, Union, Tuple
 
@@ -39,16 +40,18 @@ def compute_segmentation_metrics(
 
     image_labels_flat = image_labels.reshape(-1)
     binary_reconstruction_flat = binary_reconstruction.reshape(-1)
-    accu = np.mean(np.equal(image_labels_flat,binary_reconstruction_flat))
+    accu = np.mean(np.equal(image_labels_flat,binary_reconstruction_flat)) # useless because of background dominance, but kept for completeness
     accu1 = precision_score(image_labels_flat,binary_reconstruction_flat)
     accu2 = recall_score(image_labels_flat,binary_reconstruction_flat)
     f1 = f1_score(image_labels_flat,binary_reconstruction_flat)
+    iou = jaccard_score(image_labels_flat,binary_reconstruction_flat, average='binary')
 
     metrics = {
-        "accuracy": accu,
-        "precision": accu1,
-        "recall": accu2,
-        "f1-score": f1
+        "Accuracy": accu,
+        "Precision": accu1,
+        "Recall": accu2,
+        "F1-Score": f1,
+        "IoU": iou
     }
 
     return metrics
@@ -89,6 +92,21 @@ def compute_MSE(
     mse_value = np.mean((image_labels -  reconstructed_images) ** 2)
     return mse_value
 
+def compute_MAE(
+        reconstructed_images: np.ndarray,
+        image_labels: np.ndarray
+    ) -> float:
+    """
+    Compute Mean Absolute Error (MAE) between two images.
+    Args:
+        reconstructed_images (np.ndarray): Model's reconstructed images.
+        image_labels (np.ndarray): Ground truth labelled images.
+    Returns:
+        float: MAE value between the two images.
+    """
+    mae_value = np.mean(np.abs(image_labels -  reconstructed_images))
+    return mae_value
+
 def compute_CNR(
         binary_reconstruction: np.ndarray,
         image_labels: np.ndarray,
@@ -112,6 +130,36 @@ def compute_CNR(
     cnr_value = np.abs(mean_signal - mean_background) / (std_background + 1e-8)  # Avoid division by zero
 
     return cnr_value
+
+def compute_PSNR(
+        reconstructed_images: np.ndarray,
+        image_labels: np.ndarray
+    ) -> float:
+    """
+    Compute Peak Signal-to-Noise Ratio (PSNR) between two images.
+    Args:
+        reconstructed_images (np.ndarray): Model's reconstructed images.
+        image_labels (np.ndarray): Ground truth labelled images.
+    Returns:
+        float: PSNR value between the two images.
+    """
+    psnr_value = peak_signal_noise_ratio(image_labels, reconstructed_images, data_range=image_labels.max() - image_labels.min())
+    return psnr_value
+
+def compute_SSIM(
+        reconstructed_image: np.ndarray,
+        image_labels: np.ndarray
+    ) -> float:
+    """
+    Compute Structural Similarity Index Measure (SSIM) between two images.
+    Args:
+        reconstructed_image (np.ndarray): Model's reconstructed image.
+        image_label (np.ndarray): Ground truth labelled image.
+    Returns:
+        float: SSIM value between the two images.
+    """
+    ssim_value = structural_similarity(image_labels, reconstructed_image, data_range=image_labels.max() - image_labels.min())
+    return ssim_value
 
 def compute_SSIM_batch(
     reconstructed_images: np.ndarray,
