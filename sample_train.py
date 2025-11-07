@@ -89,6 +89,21 @@ def read_options() -> argparse.Namespace:
     args = parser.parse_args()
     return args
 
+class ThresholdedIoU(tf.keras.metrics.IoU):
+    def __init__(self, num_classes, target_class_ids, name='seg_iou', threshold=0.5, dtype=None):
+        super().__init__(num_classes=num_classes, target_class_ids=target_class_ids, name=name, dtype=dtype)
+        self.threshold = threshold  # Define your desired threshold
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        # Explicitly threshold the predictions to get binary values (0 or 1)
+        y_pred = tf.cast(tf.math.greater(y_pred, self.threshold), dtype=tf.float32)
+        
+        # Ensure y_true is also in the correct discrete format if needed (usually it is from the data pipeline)
+        # y_true = tf.cast(tf.math.round(y_true), dtype=tf.float32) 
+        
+        # Call the parent update_state with the now-discrete values
+        super().update_state(y_true, y_pred, sample_weight)
+
 if __name__ == "__main__":
 
     args = read_options()
@@ -231,10 +246,22 @@ if __name__ == "__main__":
             output_shape=images.shape[1:]
         )
 
+        custom_iou = ThresholdedIoU(
+            num_classes=2,
+            target_class_ids=[1], 
+            name='seg_iou', 
+            threshold=args.binary_threshold
+        )
+
         model.compile(
             loss=args.loss, 
             optimizer=opt, 
-            metrics=['accuracy'],
+            metrics=[
+                # 'accuracy',
+                'precision',
+                'recall',
+                custom_iou
+                ],
         )
 
         model.summary()
