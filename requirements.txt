@@ -6,8 +6,9 @@ preprocess
 pyeit
 PyWavelets
 scikit_learn
+scikit_image
 scipy
 seaborn
-tensorflow
+tensorflow[and-cuda]
 tikzplotlib
 ultralytics
