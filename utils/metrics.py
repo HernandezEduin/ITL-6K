@@ -12,11 +12,12 @@ from typing import Dict, Union, Tuple
 #----------------------------------------------------------------
 'Image Reconstruction Metrics and Utilities using Numpy, SciPy, Scikit-learn, and Skimage'
 
+# ---- Image Reconstruction Utility ----
 def reconstruct_image(
-        model: tf.keras.Model,
-        input_data: np.ndarray,
-        threshold: float = 0.5
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    model: tf.keras.Model,
+    input_data: np.ndarray,
+    threshold: float = 0.5,
+) -> Tuple[np.ndarray, np.ndarray]:
     """
     Use the trained model to reconstruct images from input voltage data.
     Args:
@@ -31,10 +32,12 @@ def reconstruct_image(
     binary_reconstruction = np.where(reconstructed_images >= threshold, 1, 0)
     return reconstructed_images, binary_reconstruction
 
+
+# ---- Segmentation Metrics ----
 def compute_segmentation_metrics(
-        binary_reconstruction: np.ndarray,
-        image_labels: np.ndarray, 
-    ) -> Dict[str, float]:
+    binary_reconstruction: np.ndarray,
+    image_labels: np.ndarray, 
+) -> Dict[str, float]:
     """
     Compute segmentation metrics between binary reconstruction and ground truth labels.
     
@@ -64,7 +67,7 @@ def compute_segmentation_metrics(
     f1 = f1_score(image_labels_flat,binary_reconstruction_flat)
     iou = jaccard_score(image_labels_flat,binary_reconstruction_flat, average='binary') # pixel-wise IoU
 
-    metrics = {
+    return {
         "Accuracy": accu,
         "IoU": iou,
         "Precision": accu1,
@@ -72,12 +75,11 @@ def compute_segmentation_metrics(
         "F1-Score": f1,
     }
 
-    return metrics
 
 def compute_confusion_matrix(
-        binary_reconstruction: np.ndarray,
-        image_labels: np.ndarray, 
-    ) -> np.ndarray:
+    binary_reconstruction: np.ndarray,
+    image_labels: np.ndarray, 
+) -> np.ndarray:
     """
     Compute confusion matrix between binary reconstruction and ground truth labels.
 
@@ -101,10 +103,39 @@ def compute_confusion_matrix(
 
     return cm
 
+
+# ---- Image Quality Metrics -----
+def _to_bhw(
+    x: np.ndarray
+) -> np.ndarray:
+    """Ensure shape (N,H,W), float32, clipped to [0,1]."""
+    x = np.asarray(x, dtype=np.float32)
+    if x.ndim == 2:          # (H,W) -> (1,H,W)
+        x = x[None, ...]
+    elif x.ndim == 4 and x.shape[-1] == 1:  # (N,H,W,1) -> (N,H,W)
+        x = x[..., 0]
+    assert x.ndim == 3, f"Expected (N,H,W) or (N,H,W,1); got {x.shape}"
+    return np.clip(x, 0.0, 1.0)
+
+
+def _pick_ssim_win_size(
+    h: int, 
+    w: int
+) -> int:
+    """
+    SSIM requires an odd win_size (default 7). If the image is small,
+    choose the largest odd <= min(h,w). Minimum valid is 3.
+    """
+    m = max(3, min(h, w))
+    if m % 2 == 0:
+        m -= 1
+    return max(3, m)
+
+
 def compute_image_metrics(
-        reconstructed_images: np.ndarray,
-        image_labels: np.ndarray
-    ) -> Dict[str, float]:
+    reconstructed_images: np.ndarray,
+    image_labels: np.ndarray,
+) -> Dict[str, float]:
     """
     Compute various image quality metrics between reconstructed images and ground truth labels.
     Args:
@@ -120,7 +151,7 @@ def compute_image_metrics(
     ssim_value = compute_SSIM_batch(reconstructed_images, image_labels)
     cnr_value = compute_CNR(reconstructed_images, image_labels)
 
-    metrics = {
+    return {
         "MSE": mse_value,
         "MAE": mae_value,
         "PSNR (dB)": psnr_value,
@@ -128,12 +159,11 @@ def compute_image_metrics(
         "CNR": cnr_value,
     }
 
-    return metrics
 
 def compute_MSE(
-        reconstructed_images: np.ndarray,
-        image_labels: np.ndarray
-    ) -> float:
+    reconstructed_images: np.ndarray,
+    image_labels: np.ndarray,
+) -> float:
     """
     Compute Mean Squared Error (MSE) between two images.
 
@@ -150,10 +180,11 @@ def compute_MSE(
     mse_value = np.mean((image_labels -  reconstructed_images) ** 2)
     return mse_value
 
+
 def compute_MAE(
-        reconstructed_images: np.ndarray,
-        image_labels: np.ndarray
-    ) -> float:
+    reconstructed_images: np.ndarray,
+    image_labels: np.ndarray,
+) -> float:
     """
     Compute Mean Absolute Error (MAE) between two images.
 
@@ -170,10 +201,109 @@ def compute_MAE(
     mae_value = np.mean(np.abs(image_labels -  reconstructed_images))
     return mae_value
 
+
+def compute_PSNR(
+    reconstructed_images: np.ndarray,
+    image_labels: np.ndarray,
+) -> float:
+    """
+    Compute Peak Signal-to-Noise Ratio (PSNR) between two images.
+
+    PSNR is calculated as:
+        PSNR = 10 * log10((MAX_I^2) / MSE)
+    where MAX_I is the maximum possible pixel value (255 for 8-bit images) and MSE is the mean squared error between the two images.
+
+    Args:
+        reconstructed_images (np.ndarray): Model's reconstructed images.
+        image_labels (np.ndarray): Ground truth labelled images.
+    Returns:
+        float: PSNR value between the two images.
+    """
+    psnr_value = peak_signal_noise_ratio(image_labels, reconstructed_images, data_range=1.0)
+    return psnr_value
+
+
+def compute_PSNR_batch(
+    reconstructed_images: np.ndarray,
+    image_labels: np.ndarray,
+    reduction: str = "mean",  # "mean" or "none"
+):
+    """
+    Per-image PSNR with data_range=1.0 (because inputs are in [0,1]).
+    Returns float (mean) or np.ndarray (N,) if reduction == 'none'.
+    """
+    preds = _to_bhw(reconstructed_images)
+    gts   = _to_bhw(image_labels)
+    assert preds.shape == gts.shape, f"Shape mismatch: {preds.shape} vs {gts.shape}"
+
+    N = preds.shape[0]
+    psnrs = np.empty(N, dtype=np.float32)
+    for i in range(N):
+        psnrs[i] = peak_signal_noise_ratio(
+            gts[i], preds[i], data_range=1.0
+        )
+    return float(psnrs.mean()) if reduction == "mean" else psnrs
+
+
+def compute_SSIM(
+    reconstructed_image: np.ndarray,
+    image_labels: np.ndarray,
+) -> float:
+    """
+    Compute Structural Similarity Index Measure (SSIM) between two images.
+
+    SSIM is calculated based on luminance, contrast, and structure comparisons between the two images.
+        Specifically, it considers the following components:
+        - Luminance: The brightness of the images.
+        - Contrast: The contrast of the images.
+        - Structure: The structural information of the images.
+
+    Args:
+        reconstructed_image (np.ndarray): Model's reconstructed image.
+        image_label (np.ndarray): Ground truth labelled image.
+    Returns:
+        float: SSIM value between the two images.
+    """
+    ssim_value = structural_similarity(
+        image_labels, 
+        reconstructed_image, 
+        data_range=1.0
+    )
+    return ssim_value
+
+
+def compute_SSIM_batch(
+    reconstructed_images: np.ndarray,
+    image_labels: np.ndarray,
+    reduction: str = "mean",  # "mean" or "none"
+) -> Union[float, np.ndarray]:
+    """
+    Per-image SSIM (skimage), grayscale (channel_axis=None), data_range=1.0.
+    Returns float (mean) or np.ndarray (N,) if reduction == 'none'.
+    """
+    preds = _to_bhw(reconstructed_images)
+    gts   = _to_bhw(image_labels)
+    assert preds.shape == gts.shape, f"Shape mismatch: {preds.shape} vs {gts.shape}"
+
+    N, H, W = preds.shape
+    win_size = _pick_ssim_win_size(H, W)
+
+    ssim_vals = np.empty(N, dtype=np.float32)
+    for i in range(N):
+        ssim_vals[i] = structural_similarity(
+            gts[i], preds[i],
+            data_range=1.0,
+            channel_axis=None,     # grayscale
+            win_size=win_size,     # safe for small images
+            gaussian_weights=True  # common & stable
+        )
+    return float(ssim_vals.mean()) if reduction == "mean" else ssim_vals
+
+
 def compute_CNR(
-        reconstructed_images: np.ndarray, 
-        gt_mask: np.ndarray,
-    ) -> float:
+    reconstructed_images: np.ndarray, 
+    gt_mask: np.ndarray,
+) -> float:
     """
     Compute Contrast-to-Noise Ratio (CNR) between two images.
 
@@ -209,126 +339,95 @@ def compute_CNR(
         sig = rec[gt]; bg = rec[~gt]
         return float(abs(sig.mean() - bg.mean()) / (bg.std() + 1e-8)) if sig.size and bg.size else float("nan")
 
-def _to_bhw(x: np.ndarray) -> np.ndarray:
-    """Ensure shape (N,H,W), float32, clipped to [0,1]."""
-    x = np.asarray(x, dtype=np.float32)
-    if x.ndim == 2:          # (H,W) -> (1,H,W)
-        x = x[None, ...]
-    elif x.ndim == 4 and x.shape[-1] == 1:  # (N,H,W,1) -> (N,H,W)
-        x = x[..., 0]
-    assert x.ndim == 3, f"Expected (N,H,W) or (N,H,W,1); got {x.shape}"
-    return np.clip(x, 0.0, 1.0)
 
-def compute_PSNR(
-        reconstructed_images: np.ndarray,
-        image_labels: np.ndarray
-    ) -> float:
+# ---- Object-level and Boundary-level Metrics ----
+def _area(
+    mask: np.ndarray,
+    spacing=(1.0, 1.0)
+) -> float:
     """
-    Compute Peak Signal-to-Noise Ratio (PSNR) between two images.
-
-    PSNR is calculated as:
-        PSNR = 10 * log10((MAX_I^2) / MSE)
-    where MAX_I is the maximum possible pixel value (255 for 8-bit images) and MSE is the mean squared error between the two images.
-
-    Args:
-        reconstructed_images (np.ndarray): Model's reconstructed images.
-        image_labels (np.ndarray): Ground truth labelled images.
-    Returns:
-        float: PSNR value between the two images.
+    Area of LCC (SciPy) or of all foreground (fallback).
     """
-    psnr_value = peak_signal_noise_ratio(image_labels, reconstructed_images, data_range=1.0)
-    return psnr_value
+    pix_area = spacing[0] * spacing[1]
+    lcc = _largest_cc(mask)
+    return float(lcc.sum()) * pix_area
 
 
-def compute_PSNR_batch(
-    reconstructed_images: np.ndarray,
-    image_labels: np.ndarray,
-    reduction: str = "mean"  # "mean" or "none"
-):
+def _centroid(
+    mask: np.ndarray, 
+    spacing=(1.0, 1.0)
+) -> Union[Tuple[float, float], None]:
     """
-    Per-image PSNR with data_range=1.0 (because inputs are in [0,1]).
-    Returns float (mean) or np.ndarray (N,) if reduction == 'none'.
+    Centroid in (row, col) with optional physical spacing (row_mm, col_mm).
+    If SciPy is available and there are multiple components, centroid of LCC; otherwise centroid of all foreground pixels.
     """
-    preds = _to_bhw(reconstructed_images)
-    gts   = _to_bhw(image_labels)
-    assert preds.shape == gts.shape, f"Shape mismatch: {preds.shape} vs {gts.shape}"
-
-    N = preds.shape[0]
-    psnrs = np.empty(N, dtype=np.float32)
-    for i in range(N):
-        psnrs[i] = peak_signal_noise_ratio(
-            gts[i], preds[i], data_range=1.0
-        )
-    return float(psnrs.mean()) if reduction == "mean" else psnrs
+    mask = (mask > 0)
+    if mask.sum() == 0:
+        return None  # no foreground
+    # center_of_mass expects weights; mask.astype(float) is fine
+    r, c = sp_com(mask.astype(float))
+    # convert to physical space if spacing provided
+    return (r * spacing[0], c * spacing[1])
 
 
-def compute_SSIM(
-        reconstructed_image: np.ndarray,
-        image_labels: np.ndarray
-    ) -> float:
+def _directed_surface_distances(
+    A: np.ndarray, 
+    B: np.ndarray, 
+    spacing=(1.0,1.0),
+) -> np.ndarray:
     """
-    Compute Structural Similarity Index Measure (SSIM) between two images.
-
-    SSIM is calculated based on luminance, contrast, and structure comparisons between the two images.
-        Specifically, it considers the following components:
-        - Luminance: The brightness of the images.
-        - Contrast: The contrast of the images.
-        - Structure: The structural information of the images.
-
-    Args:
-        reconstructed_image (np.ndarray): Model's reconstructed image.
-        image_label (np.ndarray): Ground truth labelled image.
-    Returns:
-        float: SSIM value between the two images.
+    Directed minimal distances from surface A to surface B.
     """
-    ssim_value = structural_similarity(image_labels, reconstructed_image, data_range=1.0)
-    return ssim_value
+    A_surf = _surface(A)
+    B_surf = _surface(B)
+    if A_surf.sum() == 0:
+        return np.array([0.0], dtype=np.float32)
+    if B_surf.sum() == 0:
+        # all points in A to "infinite" distance; treat as large
+        return np.array([np.inf], dtype=np.float32)
+
+    # Compute distance to B surface via EDT on ~B_surf (distance to nearest True in B_surf)
+    # Trick: EDT gives distance to zeros. We invert B_surf so that B_surf==False becomes 0 “targets”.
+    # Simpler: distance to B_surf can be computed by EDT on ~B_surf and sample at A_surf.
+    # But we want distance to nearest True pixel; an alternative is EDT on (~B_surf) with sampling rules:
+    # Instead, compute EDT on the complement of B_surf==False? Use the standard approach:
+    # Make an array where 0 at B_surf pixels; 1 elsewhere. EDT computes distance to zeros.
+    target = np.ones_like(B_surf, dtype=bool)
+    target[B_surf] = False
+    dt = distance_transform_edt(target, sampling=spacing)
+    return dt[A_surf].astype(np.float32)
 
 
-def _pick_ssim_win_size(h: int, w: int) -> int:
+def _largest_cc(
+    mask: np.ndarray
+) -> np.ndarray:
+    m = (mask > 0).astype(np.uint8)
+    lbl, n = sp_label(m)
+    if n == 0:
+        return np.zeros_like(m, dtype=bool)
+    sizes = np.bincount(lbl.ravel())
+    sizes[0] = 0
+    return (lbl == sizes.argmax())
+
+
+def _surface(
+    mask: np.ndarray
+) -> np.ndarray:
     """
-    SSIM requires an odd win_size (default 7). If the image is small,
-    choose the largest odd <= min(h,w). Minimum valid is 3.
+    Return a boolean mask of boundary pixels.
     """
-    m = max(3, min(h, w))
-    if m % 2 == 0:
-        m -= 1
-    return max(3, m)
-
-
-def compute_SSIM_batch(
-    reconstructed_images: np.ndarray,
-    image_labels: np.ndarray,
-    reduction: str = "mean"  # "mean" or "none"
-):
-    """
-    Per-image SSIM (skimage), grayscale (channel_axis=None), data_range=1.0.
-    Returns float (mean) or np.ndarray (N,) if reduction == 'none'.
-    """
-    preds = _to_bhw(reconstructed_images)
-    gts   = _to_bhw(image_labels)
-    assert preds.shape == gts.shape, f"Shape mismatch: {preds.shape} vs {gts.shape}"
-
-    N, H, W = preds.shape
-    win_size = _pick_ssim_win_size(H, W)
-
-    ssim_vals = np.empty(N, dtype=np.float32)
-    for i in range(N):
-        ssim_vals[i] = structural_similarity(
-            gts[i], preds[i],
-            data_range=1.0,
-            channel_axis=None,     # grayscale
-            win_size=win_size,     # safe for small images
-            gaussian_weights=True  # common & stable
-        )
-    return float(ssim_vals.mean()) if reduction == "mean" else ssim_vals
+    mask = (mask > 0)
+    if mask.sum() == 0:
+        return np.zeros_like(mask, dtype=bool)
+    er = binary_erosion(mask)
+    return mask ^ er
 
 
 def compute_object_boundary_metrics(
-        pred_mask: np.ndarray,
-        gt_mask: np.ndarray,
-        spacing: Tuple[float, float] = (1.0, 1.0)
-    ) -> Dict[str, float]:
+    pred_mask: np.ndarray,
+    gt_mask: np.ndarray,
+    spacing: Tuple[float, float] = (1.0, 1.0),
+) -> Dict[str, float]:
     """
     Compute object-level and boundary-level metrics between predicted and ground truth masks.
     Args:
@@ -366,42 +465,11 @@ def compute_object_boundary_metrics(
     }
 
 
-def _largest_cc(mask: np.ndarray) -> np.ndarray:
-    m = (mask > 0).astype(np.uint8)
-    lbl, n = sp_label(m)
-    if n == 0:
-        return np.zeros_like(m, dtype=bool)
-    sizes = np.bincount(lbl.ravel())
-    sizes[0] = 0
-    return (lbl == sizes.argmax())
-
-
-def _centroid(mask: np.ndarray, spacing=(1.0, 1.0)):
-    """
-    Centroid in (row, col) with optional physical spacing (row_mm, col_mm).
-    If SciPy is available and there are multiple components, centroid of LCC; otherwise centroid of all foreground pixels.
-    """
-    mask = (mask > 0)
-    if mask.sum() == 0:
-        return None  # no foreground
-    # center_of_mass expects weights; mask.astype(float) is fine
-    r, c = sp_com(mask.astype(float))
-    # convert to physical space if spacing provided
-    return (r * spacing[0], c * spacing[1])
-
-
-def _area(mask: np.ndarray, spacing=(1.0, 1.0)):
-    """
-    Area of LCC (SciPy) or of all foreground (fallback).
-    """
-    pix_area = spacing[0] * spacing[1]
-    lcc = _largest_cc(mask)
-    return float(lcc.sum()) * pix_area
-
-
-def object_metrics_from_masks(pred_mask: np.ndarray,
-                              gt_mask: np.ndarray,
-                              spacing=(1.0, 1.0)) -> dict:
+def object_metrics_from_masks(
+    pred_mask: np.ndarray,
+    gt_mask: np.ndarray,
+    spacing=(1.0, 1.0),
+) -> Dict[str, float]:
     """
     Compute object-level localization & size errors.
 
@@ -444,58 +512,11 @@ def object_metrics_from_masks(pred_mask: np.ndarray,
     }
 
 
-def pr_curve_and_auprc(y_prob_flat: np.ndarray,
-                       y_true_flat: np.ndarray):
-    """
-    Return precision array, recall array, thresholds array, and AUPRC.
-    Inputs must be 1D and aligned.
-    """
-    y_true_flat = y_true_flat.astype(np.uint8).ravel()
-    y_prob_flat = y_prob_flat.astype(np.float32).ravel()
-
-    precision, recall, thresholds = sk_pr_curve(y_true_flat, y_prob_flat)
-    auprc = float(average_precision_score(y_true_flat, y_prob_flat))
-    return precision, recall, thresholds, auprc
-
-
-def _surface(mask: np.ndarray) -> np.ndarray:
-    """
-    Return a boolean mask of boundary pixels.
-    """
-    mask = (mask > 0)
-    if mask.sum() == 0:
-        return np.zeros_like(mask, dtype=bool)
-    er = binary_erosion(mask)
-    return mask ^ er
-
-
-def _directed_surface_distances(A: np.ndarray, B: np.ndarray, spacing=(1.0,1.0)) -> np.ndarray:
-    """
-    Directed minimal distances from surface A to surface B.
-    """
-    A_surf = _surface(A)
-    B_surf = _surface(B)
-    if A_surf.sum() == 0:
-        return np.array([0.0], dtype=np.float32)
-    if B_surf.sum() == 0:
-        # all points in A to "infinite" distance; treat as large
-        return np.array([np.inf], dtype=np.float32)
-
-    # Compute distance to B surface via EDT on ~B_surf (distance to nearest True in B_surf)
-    # Trick: EDT gives distance to zeros. We invert B_surf so that B_surf==False becomes 0 “targets”.
-    # Simpler: distance to B_surf can be computed by EDT on ~B_surf and sample at A_surf.
-    # But we want distance to nearest True pixel; an alternative is EDT on (~B_surf) with sampling rules:
-    # Instead, compute EDT on the complement of B_surf==False? Use the standard approach:
-    # Make an array where 0 at B_surf pixels; 1 elsewhere. EDT computes distance to zeros.
-    target = np.ones_like(B_surf, dtype=bool)
-    target[B_surf] = False
-    dt = distance_transform_edt(target, sampling=spacing)
-    return dt[A_surf].astype(np.float32)
-
-
-def hd95_assd(pred_mask: np.ndarray,
-              gt_mask: np.ndarray,
-              spacing=(1.0,1.0)) -> dict:
+def hd95_assd(
+    pred_mask: np.ndarray,
+    gt_mask: np.ndarray,
+    spacing=(1.0, 1.0),
+) -> Dict[str, float]:
     """
     Compute symmetric HD95 and ASSD between binary masks.
     Returns:
@@ -520,7 +541,28 @@ def hd95_assd(pred_mask: np.ndarray,
     else:
         hd95, assd = float('inf'), float('inf')
 
-    return {'hd95': hd95, 'assd': assd}
+    return {
+        'hd95': hd95,
+        'assd': assd
+    }
+
+
+# ---- Precision-Recall Curve and AUPRC ----
+def pr_curve_and_auprc(
+    y_prob_flat: np.ndarray,
+    y_true_flat: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, float]:
+    """
+    Return precision array, recall array, thresholds array, and AUPRC.
+    Inputs must be 1D and aligned.
+    """
+    y_true_flat = y_true_flat.astype(np.uint8).ravel()
+    y_prob_flat = y_prob_flat.astype(np.float32).ravel()
+
+    precision, recall, thresholds = sk_pr_curve(y_true_flat, y_prob_flat)
+    auprc = float(average_precision_score(y_true_flat, y_prob_flat))
+    return precision, recall, thresholds, auprc
+
 
 #----------------------------------------------------------------
 'Custom Keras Metric'
