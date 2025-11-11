@@ -13,11 +13,14 @@ from tensorflow.keras.models import load_model
 from utils.setup import set_seeds
 from utils.dataloader import load_eit_dataset
 from utils.filters import bandpass_filter, pca_transform, savitzky_filter, wavelet_filter
-from utils.metrics import reconstruct_image, compute_segmentation_metrics, compute_confusion_matrix
+from utils.metrics import reconstruct_image, downscale_mask
+from utils.metrics import compute_segmentation_metrics, compute_confusion_matrix
 from utils.metrics import pr_curve_and_auprc, compute_image_metrics, compute_object_boundary_metrics
 from utils.metrics import ThresholdedIoU
 from models.image_reconstruction import Voltage2Image
 from models.schedulers import SchedulerandTrackerCallback
+
+import sys
 
 def read_options() -> argparse.Namespace:
     """Parse and return command-line options.
@@ -42,11 +45,16 @@ def read_options() -> argparse.Namespace:
     parser.add_argument('--offset-num', type=int, default=2, help='Offset to skip the first N samples')
     parser.add_argument('--num-pins', type=int, default=16, help='Number of pins in the voltage data')
     parser.add_argument('--resolution', type=int, default=128, help='Image resolution (height == width)')
+    parser.add_argument('-d', '--downscale', action='store_true', help='Flag to downscale images for training')
+    parser.add_argument('--downscale-resolution', type=int, default=64,
+                        help='Downscaled target resolution for training/validation masks')
+
     parser.add_argument('--sampling-rate', type=int, default=128, help='Sampling rate for voltage data')
     parser.add_argument('--sample-id', type=int, default=0, help='Index of sample to visualize (0-based)')
 
     parser.add_argument('--use-subset', action='store_true', help='Use a smaller subset of the data for training.')
     parser.add_argument('--subset-percentage', type=float, default=0.5, help='Number of samples to use if --use-subset is set.')
+
 
     # Data processing parameters
     parser.add_argument('--batch-size', type=int, default=64, help='Batch size for training/testing datasets')
@@ -147,6 +155,13 @@ if __name__ == "__main__":
     x_train = (x_train - mean) / var
     x_test = (x_test - mean) / var
 
+    if args.downscale:
+        print(f"Downscaling images from {args.resolution}x{args.resolution} to {args.downscale_resolution}x{args.downscale_resolution}.")
+
+        y_train = downscale_mask(y_train, args.downscale_resolution)
+        y_test_original = y_test.copy()
+        y_test = downscale_mask(y_test, args.downscale_resolution)
+
     # Use subset of the data if specified
     if args.use_subset:
         num_train_samples = int(len(x_train) * args.subset_percentage)
@@ -158,6 +173,7 @@ if __name__ == "__main__":
         print(f"Using subset of train data ({args.subset_percentage*100:.0f}%): {num_train_samples} samples.")
 
     data_shape = x_train.shape
+    output_shape = y_train.shape
 
     if args.use_bandpass:
         x_train = bandpass_filter(x_train.copy())
@@ -192,6 +208,7 @@ if __name__ == "__main__":
 
         x_test = x_test[selected_indices]
         y_test = y_test[selected_indices]
+        if args.downscale: y_test_original = y_test_original[selected_indices]
         exp_info_test = exp_info_test[selected_indices]
 
     # convert to tf.data.Dataset
@@ -240,7 +257,7 @@ if __name__ == "__main__":
     else:
         model = Voltage2Image(
             input_shape=data_shape[1:], 
-            output_shape=images.shape[1:]
+            output_shape=output_shape[1:]
         )
 
         custom_iou = ThresholdedIoU(
@@ -304,10 +321,16 @@ if __name__ == "__main__":
     reconstructed_images, binary_reconstructions = reconstruct_image(
         model,
         x_test,
-        threshold=args.binary_threshold
+        threshold=args.binary_threshold,
+        upscale=args.downscale,
+        upscale_size=args.resolution,
     )
+
     total_inference_time = time() - inference_start_time
     print(f"Total inference time on test set: {total_inference_time:.2f} seconds.")
+
+    if args.downscale:
+        y_test = y_test_original
 
     # ---- Segmentation metrics (Pixelwise) ----
     metrics.update({"Segmentation Metrics": 

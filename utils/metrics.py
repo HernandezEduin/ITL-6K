@@ -17,6 +17,8 @@ def reconstruct_image(
     model: tf.keras.Model,
     input_data: np.ndarray,
     threshold: float = 0.5,
+    upscale: bool = False,
+    upscale_size: Optional[int] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Use the trained model to reconstruct images from input voltage data.
@@ -29,9 +31,50 @@ def reconstruct_image(
     """
 
     reconstructed_images = model.predict(input_data)
+    if upscale:
+        assert upscale_size is not None, "upscale_size must be provided when upscale is True"
+        reconstructed_images = upscale_images(reconstructed_images, upscale_size)
     binary_reconstruction = np.where(reconstructed_images >= threshold, 1, 0)
     return reconstructed_images, binary_reconstruction
 
+
+def downscale_mask(
+    masks: np.ndarray, 
+    size: int
+) -> np.ndarray:
+    """
+    Downscale masks to the target resolution.
+
+    Args:
+        masks (np.ndarray): Input binary masks of shape (N, H, W) or (N, H, W, 1).
+        size (int): Target size for both height and width.
+    Returns:
+        np.ndarray: Downscaled binary masks of shape (N, size, size).
+    """
+    t = tf.convert_to_tensor(masks, dtype=tf.float32)
+    if t.shape.rank == 3:  # (N,H,W) -> (N,H,W,1)
+        t = t[..., None]
+    t = tf.image.resize(t, [size, size], method='area')
+    t = tf.cast(t >= 0.5, tf.float32)
+    return t.numpy().squeeze(3)
+
+# Upscale predictions to original resolution for evaluation/plots
+def upscale_images(
+    rec: np.ndarray, 
+    size: int, 
+) -> np.ndarray:
+    """
+    Upscale the input images to the target resolution.
+
+    Args:
+        rec (np.ndarray): Input reconstructed images of shape (N, H, W) or (N, H, W, 1).
+        size (int): Target size for both height and width.
+    Returns:
+        np.ndarray: Upscaled reconstructed images of shape (N, size, size) or (N, size, size, 1).
+    """
+    target = [size, size]
+    rec_up = tf.image.resize(tf.convert_to_tensor(rec[..., None], dtype=tf.float32), target, method='bilinear').numpy()
+    return rec_up.squeeze(3)
 
 # ---- Segmentation Metrics ----
 def compute_segmentation_metrics(
