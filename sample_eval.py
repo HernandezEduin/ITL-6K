@@ -16,9 +16,6 @@ from utils.filters import bandpass_filter, pca_transform, savitzky_filter, wavel
 from utils.metrics import reconstruct_image, downscale_mask
 from utils.metrics import compute_segmentation_metrics, compute_confusion_matrix
 from utils.metrics import pr_curve_and_auprc, compute_image_metrics, compute_object_boundary_metrics
-from utils.metrics import ThresholdedIoU
-from models.image_reconstruction import Voltage2Image
-from models.schedulers import SchedulerandTrackerCallback
 
 import sys
 
@@ -33,14 +30,14 @@ def read_options() -> argparse.Namespace:
     # Create the parser and register arguments. Defaults preserve original
     # behavior so existing workflows won't be broken.
     parser = argparse.ArgumentParser(
-        description="Train and evaluate a neural network model for EIT image reconstruction."
+        description="Evaluate a neural network model for EIT image reconstruction."
     )
 
     # =====================
     # Data Loading Parameters
     # =====================
     parser.add_argument('--data-path', type=str, default='./data', help='Root data directory')
-    parser.add_argument('-exp', '--experiments', nargs='+', 
+    parser.add_argument('-e', '--experiments', nargs='+', 
                         default=['1022.1', '1022.2', '1022.3', '1022.4', '1024.5', '1024.6', '1024.7', '1025.8'],
                         help='List of experiment folder names to load (space separated)')
     parser.add_argument('--num-samples', type=int, default=722, help='Total number of samples per experiment')
@@ -48,7 +45,7 @@ def read_options() -> argparse.Namespace:
     parser.add_argument('--num-pins', type=int, default=16, help='Number of pins in the voltage data')
     parser.add_argument('--resolution', type=int, default=128, help='Image resolution (height == width)')
     parser.add_argument('--sampling-rate', type=int, default=128, help='Sampling rate for voltage data')
-    # parser.add_argument('--sample-id', type=int, default=0, help='Index of sample to visualize (0-based)')
+    parser.add_argument('--sample-id', type=int, default=0, help='Index of sample to visualize (0-based)')
 
     # =====================
     # Data Processing Parameters
@@ -76,24 +73,18 @@ def read_options() -> argparse.Namespace:
     # =====================
     # Model Training Parameters
     # =====================
-    parser.add_argument('-t', '--train-model', action='store_true', help='Flag to train the model from scratch or fine-tune a pre-trained model.')
-    parser.add_argument('-e', '--eval-model', action='store_true', help='Flag to evaluate the model on the test dataset.')
-    parser.add_argument('--learning-rate', type=float, default=0.001, help='Learning rate for the optimizer')
-    parser.add_argument('--epochs', type=int, default=1000, help='Number of training epochs')
-    parser.add_argument('--loss', type=str, choices=['mse', 'binary_crossentropy'], default='binary_crossentropy', help='Loss function to use during training')
     parser.add_argument('--training-circles-num', type=str, default='all', choices=['all', '1', '2', '3', '4'], help='Number of circles to include in training data (all or specific number)')
     parser.add_argument('--testing-circles-num', type=str, default='all', choices=['all', '1', '2', '3', '4'], help='Number of circles to include in testing data (all or specific number)')
-
+    
     # =====================
     # Model Loading/Saving Parameters
     # =====================
     parser.add_argument('--checkpoint-dir', type=str, default='./checkpoints', help='Directory to save/load model checkpoints')
     parser.add_argument('-l', '--load-model', action='store_true', help='Flag to load a pre-trained model')
     parser.add_argument('--load-model-folder', type=str, default='modeloriginal', help='Folder name to load the pre-trained model from')
-    parser.add_argument('-s', '--save-model', action='store_true', help='Flag to save the trained model')
-    parser.add_argument('-m', '--save-multi-checkpoint', action='store_true', help='Flag to save the model at regular intervals during training')
-    parser.add_argument('--save-every', type=int, default=100, help='Save the model every N epochs if --save-multi-checkpoint is set')
-    parser.add_argument('--save-model-folder', type=str, default='modeloriginal', help='Folder name to save the trained model to')
+
+    # metrics and evaluation parameters
+    parser.add_argument('--save-metrics', action='store_true', help='Flag to save evaluation metrics to a file')
 
     # =====================
     # Caching Options
@@ -109,9 +100,6 @@ def read_options() -> argparse.Namespace:
 if __name__ == "__main__":
 
     args = read_options()
-
-    assert args.train_model or args.eval_model, "Error: A model must be trained and/or evaluated."
-    assert args.train_model or args.load_model, "Error! Model must be trained from scratch or a pre-trained model must be loaded."
 
     print('='*20)
     for key, value in vars(args).items():
@@ -235,234 +223,119 @@ if __name__ == "__main__":
     print(f"Train dataset batches: {len(train_dataset)}, Test dataset batches: {len(test_dataset)}")
     
     # -------------------------------------------------------------------
-    # Compiling Model and Optimizer
+    # Loading Model
 
-    if args.load_model:
-        load_path = os.path.join(args.checkpoint_dir, args.load_model_folder, f'{args.load_model_folder}.keras')
-        
-        if load_path is None or not os.path.exists(load_path):
-            raise ValueError(f"Error! Model path {load_path} does not exist!")
-        print("Loading model from:", load_path)
-
-        model = load_model(load_path)
-
-        print(f"Model loaded. Summary: {model.summary()}")
+    load_path = os.path.join(args.checkpoint_dir, args.load_model_folder, f'{args.load_model_folder}.keras')
     
-    if args.train_model:
-        print("Training model")
+    if load_path is None or not os.path.exists(load_path):
+        raise ValueError(f"Error! Model path {load_path} does not exist!")
+    print("Loading model from:", load_path)
 
-        lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
-            initial_learning_rate=args.learning_rate,
-            decay_steps=500,
-            decay_rate=0.9,
-            staircase=True
-        )
+    model = load_model(load_path)
 
-        opt = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
-
-        model = Voltage2Image(
-            input_shape=data_shape[1:], 
-            output_shape=output_shape[1:]
-        )
-
-        custom_iou = ThresholdedIoU(
-            num_classes=2,
-            target_class_ids=[1], 
-            name='seg_iou', 
-            threshold=args.binary_threshold
-        )
-
-        model.compile(
-            loss=args.loss, 
-            optimizer=opt, 
-            metrics=[
-                custom_iou,
-                'precision',
-                'recall',
-                ],
-        )
-
-        model.summary()
-
-        if args.save_model and args.save_multi_checkpoint:
-            # Setup callbacks
-            callbacks = [
-                SchedulerandTrackerCallback(),
-                tf.keras.callbacks.ModelCheckpoint(
-                    filepath=os.path.join(args.checkpoint_dir, f'{args.save_model_folder}_epoch{{epoch:03d}}', f'{args.save_model_folder}_epoch{{epoch:03d}}.keras'),
-                    save_weights_only=False,
-                    save_best_only=False,
-                    save_freq=args.save_every * len(train_dataset),  # Save every N epochs
-                )
-            ]
-        else:
-            callbacks = [SchedulerandTrackerCallback()]
-
-        train_time_start = time()
-        history = model.fit(
-            train_dataset, 
-            epochs=args.epochs, 
-            validation_data=test_dataset,
-            callbacks=callbacks,
-            shuffle=True
-        )
-        total_train_time = time() - train_time_start
-        # print time in hrs, mins, secs
-        hrs, rem = divmod(total_train_time, 3600)
-        mins, secs = divmod(rem, 60)
-        print(f"Total training time: {int(hrs)} hrs, {int(mins)} mins, {int(secs)} secs.")
-
-        # -------------------------------------------------------------------
-        # Saving Model
-        if args.save_model:
-            if not os.path.exists(args.checkpoint_dir):
-                os.makedirs(args.checkpoint_dir)
-            if not os.path.exists(os.path.join(args.checkpoint_dir, args.save_model_folder)):
-                os.makedirs(os.path.join(args.checkpoint_dir, args.save_model_folder))
-            path = os.path.join(args.checkpoint_dir, args.save_model_folder)
-            model_path = os.path.join(path, f'{args.save_model_folder}.keras')
-            
-            print("Saving model to:", model_path)
-            model.save(model_path)
-
-            # save history object
-            history_path = os.path.join(args.checkpoint_dir, args.save_model_folder, 'history.json')
-            with open(history_path, 'w') as f:
-                json.dump(history.history, f, indent=4)
-            
-            # save training history figure
-            plt.figure()
-            plt.plot(history.history['loss'], label = 'Training loss')
-            plt.plot(history.history['val_loss'], label = 'Validation loss')
-            plt.xlabel('Epochs')
-            plt.ylabel('Loss')
-            plt.title('Training and Validation Loss')
-            plt.tight_layout()
-            plt.legend()  # Add legend elements
-            plt.grid(True)
-            plt.savefig(os.path.join(path, 'training_validation_loss.png'), dpi=200)
-            plt.savefig(os.path.join(path, 'training_validation_loss.svg'))  # nice for the paper
-
-            plt.figure()
-            plt.plot(history.history['seg_iou'], label = 'Training IoU')
-            plt.plot(history.history['val_seg_iou'], label = 'Validation IoU')
-            plt.legend()
-            plt.xlabel('Epochs')
-            plt.ylabel('IoU')
-            plt.title('Training and Validation IoU')
-            plt.tight_layout()
-            plt.legend()  # Add legend elements
-            plt.grid(True)
-            plt.savefig(os.path.join(path, 'training_validation_iou.png'), dpi=200)
-            plt.savefig(os.path.join(path, 'training_validation_iou.svg'))  # nice for the paper
+    print(f"Model loaded. Summary: {model.summary()}")
 
 
     # -------------------------------------------------------------------
     # Evaluation
+    metrics = {}
 
-    if args.eval_model:
-        print("Evaluating model")
-        metrics = {}
+    inference_start_time = time()
+    reconstructed_images, binary_reconstructions = reconstruct_image(
+        model,
+        x_test,
+        threshold=args.binary_threshold,
+        upscale=args.downscale,
+        upscale_size=args.resolution,
+    )
 
-        inference_start_time = time()
-        reconstructed_images, binary_reconstructions = reconstruct_image(
-            model,
-            x_test,
-            threshold=args.binary_threshold,
-            upscale=args.downscale,
-            upscale_size=args.resolution,
-        )
+    total_inference_time = time() - inference_start_time
+    print(f"Total inference time on test set: {total_inference_time:.2f} seconds.")
 
-        total_inference_time = time() - inference_start_time
-        print(f"Total inference time on test set: {total_inference_time:.2f} seconds.")
+    if args.downscale:
+        y_test = y_test_original
 
-        if args.downscale:
-            y_test = y_test_original
-
-        # ---- Segmentation metrics (Pixelwise) ----
-        metrics.update({"Segmentation Metrics": 
-            compute_segmentation_metrics(
-                binary_reconstructions,
-                y_test,
-            )
-        })
-
-        confusion_matrix = compute_confusion_matrix(
+    # ---- Segmentation metrics (Pixelwise) ----
+    metrics.update({"Segmentation Metrics": 
+        compute_segmentation_metrics(
             binary_reconstructions,
             y_test,
         )
+    })
 
-        # ---- Image-Level Metrics ----
-        metrics.update( {"Image-Level Metrics":
-            compute_image_metrics(
-                reconstructed_images,
-                y_test,
-            )
-        })
+    confusion_matrix = compute_confusion_matrix(
+        binary_reconstructions,
+        y_test,
+    )
 
-        # --- Object-Level and Boundary-Level Metrics ----
-        metrics.update( {"Object-Level and Boundary-Level Metrics":
-            compute_object_boundary_metrics(
-                binary_reconstructions,
-                y_test,
-            )
-        })
-
-        # ---- PR curve / AUPRC (Pixelwise) ----
-        prec, rec, thr, auprc = pr_curve_and_auprc(
+    # ---- Image-Level Metrics ----
+    metrics.update( {"Image-Level Metrics":
+        compute_image_metrics(
             reconstructed_images,
-            y_test
+            y_test,
         )
+    })
 
-        metrics.update({"PR Curve / AUPRC": {
-            "AUPRC": auprc,
+    # --- Object-Level and Boundary-Level Metrics ----
+    metrics.update( {"Object-Level and Boundary-Level Metrics":
+        compute_object_boundary_metrics(
+            binary_reconstructions,
+            y_test,
+        )
+    })
+
+    # ---- PR curve / AUPRC (Pixelwise) ----
+    prec, rec, thr, auprc = pr_curve_and_auprc(
+        reconstructed_images,
+        y_test
+    )
+
+    metrics.update({"PR Curve / AUPRC": {
+        "AUPRC": auprc,
+    }})
+
+    metrics.update(
+        {"Time": {
+            "Inference Time": total_inference_time,
         }})
 
-        metrics.update(
-            {"Time": {
-                "Inference Time": total_inference_time,
-                "Training Time": total_train_time if 'total_train_time' in locals() else None
-            }})
-
-        print("\nEvaluation Metrics:")
-        print("="*50)
-        
-        for category, metric_dict in metrics.items():
-            print(f"\n{category}:")
-            print("-"*50)
-            # Calculate the maximum length for alignment
-            max_metric_length = max(len(metric) for metric in metric_dict.keys())
-            
-            for metric, value in metric_dict.items():
-                # Right-align the values and pad metric names for clean columns
-                print(f"{metric:<{max_metric_length}} : {value:>10.5f}")
-        
-        print("\nConfusion Matrix:")
+    print("\nEvaluation Metrics:")
+    print("="*50)
+    
+    for category, metric_dict in metrics.items():
+        print(f"\n{category}:")
         print("-"*50)
-        print(confusion_matrix)
+        # Calculate the maximum length for alignment
+        max_metric_length = max(len(metric) for metric in metric_dict.keys())
+        
+        for metric, value in metric_dict.items():
+            # Right-align the values and pad metric names for clean columns
+            print(f"{metric:<{max_metric_length}} : {value:>10.4f}")
+    
+    print("\nConfusion Matrix:")
+    print("-"*50)
+    print(confusion_matrix)
 
-        # save metrics and confusion matrix
-        if args.save_model or args.load_model:
-            if args.save_model: path = os.path.join(args.checkpoint_dir, args.save_model_folder)
-            elif args.load_model: path = os.path.join(args.checkpoint_dir, args.load_model_folder)
+    if args.save_metrics:
+        path = os.path.join(args.checkpoint_dir, args.load_model_folder)
 
-            metrics_path = os.path.join(path, 'metrics.json')
-            with open(metrics_path, 'w') as f:
-                json.dump(metrics, f, indent=4)
+        metrics_path = os.path.join(path, 'metrics.json')
+        with open(metrics_path, 'w') as f:
+            json.dump(metrics, f, indent=4)
 
-            confusion_matrix_path = os.path.join(path, 'confusion_matrix.txt')
-            with open(confusion_matrix_path, 'w') as f:
-                f.write(np.array2string(confusion_matrix))
+        confusion_matrix_path = os.path.join(path, 'confusion_matrix.txt')
+        with open(confusion_matrix_path, 'w') as f:
+            f.write(np.array2string(confusion_matrix))
 
-            # save PR curve figure
-            pos_prev = (y_test.sum() / max(1, y_test.size))
-            plt.plot(rec, prec, label=f'PR curve (AP={auprc:.3f})')
-            plt.hlines(pos_prev, xmin=0, xmax=1, linestyles='dashed', label=f'Baseline={pos_prev:.3f}')
-            plt.xlabel('Recall')
-            plt.ylabel('Precision')
-            plt.title('Precision-Recall Curve')
-            plt.legend()
-            plt.grid(True)
-            plt.tight_layout()
-            plt.savefig(os.path.join(path, 'pr_curve.png'), dpi=200)
-            plt.savefig(os.path.join(path, 'pr_curve.svg'))  # nice for the paper
+        # save PR curve figure
+        pos_prev = (y_test.sum() / max(1, y_test.size))
+        plt.plot(rec, prec, label=f'PR curve (AP={auprc:.3f})')
+        plt.hlines(pos_prev, xmin=0, xmax=1, linestyles='dashed', label=f'Baseline={pos_prev:.3f}')
+        plt.xlabel('Recall')
+        plt.ylabel('Precision')
+        plt.title('Precision-Recall Curve')
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.savefig(os.path.join(path, 'pr_curve.png'), dpi=200)
+        plt.savefig(os.path.join(path, 'pr_curve.svg'))  # nice for the paper
