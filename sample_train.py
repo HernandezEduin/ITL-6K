@@ -62,7 +62,7 @@ def read_options() -> argparse.Namespace:
     parser.add_argument('--use-subset', action='store_true', help='Use a smaller subset of the data for training.')
     parser.add_argument('--subset-percentage', type=float, default=0.5, help='Number of samples to use if --use-subset is set.')
     parser.add_argument('--skip-pins', action='store_true', help='Skip certain pins in the voltage data.')
-    parser.add_argument('--skip-every-n', type=int, default=2, help='Skip every Nth pin if --skip-pins is set.')
+    parser.add_argument('--skip-every', type=int, default=2, help='Skip every Nth pin if --skip-pins is set.')
 
     # =====================
     # Data Filtering Parameters
@@ -183,10 +183,10 @@ if __name__ == "__main__":
         print(f"Using subset of train data ({args.subset_percentage*100:.0f}%): {num_train_samples} samples.")
 
     if args.skip_pins:
-        x_train = x_train[:, ::args.skip_every_n, :]
-        x_test = x_test[:, ::args.skip_every_n, :]
+        x_train = x_train[:, ::args.skip_every, :]
+        x_test = x_test[:, ::args.skip_every, :]
 
-        print(f"Skipping every {args.skip_every_n}th pin in the voltage data.")
+        print(f"Skipping every {args.skip_every}th pin in the voltage data.")
 
     data_shape = x_train.shape
     output_shape = y_train.shape

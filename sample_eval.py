@@ -59,7 +59,7 @@ def read_options() -> argparse.Namespace:
     parser.add_argument('--use-subset', action='store_true', help='Use a smaller subset of the data for training.')
     parser.add_argument('--subset-percentage', type=float, default=0.5, help='Number of samples to use if --use-subset is set.')
     parser.add_argument('--skip-pins', action='store_true', help='Skip certain pins in the voltage data.')
-    parser.add_argument('--skip-every-n', type=int, default=2, help='Skip every Nth pin if --skip-pins is set.')
+    parser.add_argument('--skip-every', type=int, default=2, help='Skip every Nth pin if --skip-pins is set.')
 
     # =====================
     # Data Filtering Parameters
@@ -171,10 +171,10 @@ if __name__ == "__main__":
         print(f"Using subset of train data ({args.subset_percentage*100:.0f}%): {num_train_samples} samples.")
 
     if args.skip_pins:
-        x_train = x_train[:, ::args.skip_every_n, :]
-        x_test = x_test[:, ::args.skip_every_n, :]
+        x_train = x_train[:, ::args.skip_every, :]
+        x_test = x_test[:, ::args.skip_every, :]
 
-        print(f"Skipping every {args.skip_every_n}th pin in the voltage data.")
+        print(f"Skipping every {args.skip_every}th pin in the voltage data.")
 
     data_shape = x_train.shape
     output_shape = y_train.shape
@@ -195,16 +195,7 @@ if __name__ == "__main__":
         x_train, x_test = pca_transform(x_train, x_test, n=args.pca_components)
         data_shape = x_train.shape
 
-    # Use only samples with specified number of circles for training/testing
-    if args.training_circles_num != 'all':
-        print(f"Limiting training data to samples with {args.training_circles_num} circles.")
-        num_circles = int(args.training_circles_num)
-        selected_indices = [i for i, info in enumerate(exp_info_train) if info['circles'] == num_circles]
-
-        x_train = x_train[selected_indices]
-        y_train = y_train[selected_indices]
-        exp_info_train = exp_info_train[selected_indices]
-    
+    # Use only samples with specified number of circles for testing
     if args.testing_circles_num != 'all':
         print(f"Limiting testing data to samples with {args.testing_circles_num} circles.")
         num_circles = int(args.testing_circles_num)
@@ -214,13 +205,6 @@ if __name__ == "__main__":
         y_test = y_test[selected_indices]
         if args.downscale: y_test_original = y_test_original[selected_indices]
         exp_info_test = exp_info_test[selected_indices]
-
-    # convert to tf.data.Dataset
-    train_dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train)).batch(args.batch_size)
-    test_dataset = tf.data.Dataset.from_tensor_slices((x_test, y_test)).batch(args.batch_size)
-
-    print(f"Train dataset samples: {x_train.shape[0]}, Test dataset samples: {x_test.shape[0]}")
-    print(f"Train dataset batches: {len(train_dataset)}, Test dataset batches: {len(test_dataset)}")
     
     # -------------------------------------------------------------------
     # Loading Model
