@@ -13,10 +13,6 @@ from utils.setup import set_seeds
 from utils.dataloader import load_eit_dataset
 from utils.filters import bandpass_filter, pca_transform, savitzky_filter, wavelet_filter
 from utils.metrics import reconstruct_image, downscale_mask
-from utils.metrics import compute_segmentation_metrics, compute_confusion_matrix
-from utils.metrics import pr_curve_and_auprc, compute_image_metrics, compute_object_boundary_metrics
-
-import sys
 
 def read_options() -> argparse.Namespace:
     """Parse and return command-line options.

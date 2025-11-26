@@ -18,9 +18,6 @@ from utils.metrics import compute_segmentation_metrics, compute_confusion_matrix
 from utils.metrics import pr_curve_and_auprc, compute_image_metrics, compute_object_boundary_metrics
 from utils.metrics import ThresholdedIoU
 from models.image_reconstruction import Voltage2Image
-from models.schedulers import SchedulerandTrackerCallback
-
-import sys
 
 def read_options() -> argparse.Namespace:
     """Parse and return command-line options.
