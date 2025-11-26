@@ -1,5 +1,5 @@
 """
-Sample loader for EIT (Electrical Impedance Tomography) project.
+Sample loader for ITL-6k (Impedance Tomography Learning Dataset).
 
 This script demonstrates how to load raw voltage time-series (input features)
 and their corresponding binarized labelled images (ground truth) from a
@@ -25,7 +25,7 @@ def read_options() -> argparse.Namespace:
     # Create the parser and register arguments. Defaults preserve original
     # behavior so existing workflows won't be broken.
     parser = argparse.ArgumentParser(
-        description='Load EIT voltage data and corresponding labelled images'
+        description='Load EIT voltage data and corresponding labelled images (ITL-6k dataset)'
     )
 
     parser.add_argument('--data-path', type=str, default='./data', help='Root data directory')

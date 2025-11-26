@@ -1,7 +1,7 @@
-# Electrical Impedance Tomography (EIT) Signal Reconstruction
+# ITL-6K: A Large-Scale Automated Experimental Dataset for Data-Driven EIT Reconstruction with Physically Controlled Ground Truth
 
 This is the official implementation for the paper:  
-**_Data-Driven Phantom Imaging in EIT with Physically Controlled Ground Truth_**
+**_ITL-6K: A Large-Scale Automated Experimental Dataset for Data-Driven EIT Reconstruction with Physically Controlled Ground Truth_**
 
 This repository contains code and documentation related to signal reconstruction using Electrical Impedance Tomography (EIT) data. The project involves processing voltage measurements from 16 electrode pins and reconstructing internal structures based on these readings using deep learning.
 
@@ -22,7 +22,7 @@ The dataset used in this project is publicly available on Kaggle:
 ## 🏗️ Project Structure
 
 ```
-EIT/
+ITL-6k/
 ├── data/                      # Raw EIT voltage and image data
 │   ├── 1022.1/               # Experiment folders
 │   ├── 1022.2/
@@ -59,14 +59,14 @@ EIT/
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/leonrdsa/EIT_new.git
-cd EIT
+git clone https://github.com/leonrdsa/ITL-6k.git
+cd ITL-6k
 ```
 
 2. Create a conda environment (recommended):
 ```bash
-conda create -n EIT python=3.9
-conda activate EIT
+conda create -n ITL-6k python=3.9
+conda activate ITL-6k
 ```
 
 3. Install dependencies:

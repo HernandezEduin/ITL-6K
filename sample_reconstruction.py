@@ -29,7 +29,7 @@ def read_options() -> argparse.Namespace:
     # Create the parser and register arguments. Defaults preserve original
     # behavior so existing workflows won't be broken.
     parser = argparse.ArgumentParser(
-        description="Evaluate a neural network model for EIT image reconstruction."
+        description="Evaluate a neural network model for EIT image reconstruction (ITL-6k dataset)."
     )
 
     # =====================
@@ -44,7 +44,7 @@ def read_options() -> argparse.Namespace:
     parser.add_argument('--num-pins', type=int, default=16, help='Number of pins in the voltage data')
     parser.add_argument('--resolution', type=int, default=128, help='Image resolution (height == width)')
     parser.add_argument('--sampling-rate', type=int, default=128, help='Sampling rate for voltage data')
-    parser.add_argument('--sample-id', type=int, default=0, help='Index of sample to visualize (0-based)')
+    parser.add_argument('--sample-id', type=int, default=42, help='Index of sample to visualize (0-based)')
 
     # =====================
     # Data Processing Parameters
@@ -202,7 +202,7 @@ if __name__ == "__main__":
 
     reconstruct_indexes = [circle_index_dict[i][args.sample_id] for i in range(1,5)]
     x_test_samples = x_test[reconstruct_indexes]
-    # y_test_samples = y_test[reconstruct_indexes]
+    y_test_samples = y_test[reconstruct_indexes]
     # if args.downscale: y_test_original_samples = y_test_original[reconstruct_indexes]
     info_sample = [exp_info_test[i] for i in reconstruct_indexes]
 
