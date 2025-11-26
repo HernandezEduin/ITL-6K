@@ -261,9 +261,9 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 If you use this code or dataset in your research, please cite:
 
 ```bibtex
-@article{salim2026eit,
-  title={Data-Driven Phantom Imaging in EIT with Physically Controlled Ground Truth},
-  author={Salim, Leonard and Hernandez, Eduin and Rini, Stefano},
+@article{hernandez2026itl,
+  title={ITL-6K: A Large-Scale Automated Experimental Dataset for Data-Driven EIT Reconstruction with Physically Controlled Ground Truth},
+  author={Hernandez, Eduin and Salim, Leonard and Rini, Stefano},
   year={2026}
 }
 ```
@@ -282,6 +282,11 @@ This project is released under an **Academic License** for research and educatio
 - Kaggle: [EIT Dataset](https://www.kaggle.com/datasets/eehernandez/eit-signal-reconstruction)
 
 **Stefano Rini** (Member, IEEE)
+
+## 👥 Affiliation
+**Information Theory Lab (ITL), NYCU**
+- Lab Website: [@ITL](https://it.lab.nycu.edu.tw/)
+- University Website: [@NYCU](https://www.nycu.edu.tw/)
 
 ## 🙏 Acknowledgments
 
