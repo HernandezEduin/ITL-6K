@@ -35,14 +35,16 @@ ITL-6k/
 │   ├── filters.py             # Signal processing filters (PCA, Savgol, Wavelet, Bandpass)
 │   ├── metrics.py             # Evaluation metrics and image processing
 │   └── setup.py               # Random seed configuration
+├── configs/                   # Configuration and batch scripts
+│   ├── train.sh              # Training script with multiple configurations
+│   ├── eval.sh               # Evaluation script
+│   └── reconstruct.sh        # Reconstruction script
 ├── checkpoints/               # Saved model weights and metrics
 ├── .cache/                    # Cached preprocessed data
 ├── sample_train.py            # Main training and evaluation script
 ├── sample_eval.py             # Standalone evaluation script
 ├── sample_loading.py          # Data loading demonstration
 ├── sample_reconstruction.py   # Reconstruction visualization
-├── train.sh                   # Training script with multiple configurations
-├── eval.sh                    # Evaluation script
 ├── requirements.txt           # Python dependencies
 └── README.md                  # This file
 ```
@@ -131,10 +133,10 @@ Use the provided shell scripts to train multiple configurations:
 
 ```bash
 # Train multiple models with different preprocessing
-bash train.sh
+bash configs/train.sh
 
 # Evaluate all models
-bash eval.sh
+bash configs/eval.sh
 ```
 
 ## 🔧 Command-Line Arguments
