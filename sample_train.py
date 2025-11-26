@@ -33,7 +33,7 @@ def read_options() -> argparse.Namespace:
     # Create the parser and register arguments. Defaults preserve original
     # behavior so existing workflows won't be broken.
     parser = argparse.ArgumentParser(
-        description="Train and evaluate a neural network model for EIT image reconstruction."
+        description="Train and evaluate a neural network model for EIT image reconstruction (ITL-6k dataset)."
     )
 
     # =====================
@@ -80,6 +80,9 @@ def read_options() -> argparse.Namespace:
     parser.add_argument('-e', '--eval-model', action='store_true', help='Flag to evaluate the model on the test dataset.')
     parser.add_argument('--learning-rate', type=float, default=0.001, help='Learning rate for the optimizer')
     parser.add_argument('--epochs', type=int, default=1000, help='Number of training epochs')
+    parser.add_argument('--use-scheduler', action='store_true', help='Use learning rate scheduler during training')
+    parser.add_argument('--decay-rate', type=float, default=0.9, help='Decay rate for the learning rate scheduler')
+    parser.add_argument('--decay-epochs', type=int, default=50, help='Number of epochs after which to apply decay if scheduler is used')
     parser.add_argument('--loss', type=str, choices=['mse', 'binary_crossentropy'], default='binary_crossentropy', help='Loss function to use during training')
     parser.add_argument('--training-circles-num', type=str, default='all', choices=['all', '1', '2', '3', '4'], help='Number of circles to include in training data (all or specific number)')
     parser.add_argument('--testing-circles-num', type=str, default='all', choices=['all', '1', '2', '3', '4'], help='Number of circles to include in testing data (all or specific number)')
@@ -251,12 +254,15 @@ if __name__ == "__main__":
     if args.train_model:
         print("Training model")
 
-        lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
-            initial_learning_rate=args.learning_rate,
-            decay_steps=500,
-            decay_rate=0.9,
-            staircase=True
-        )
+        if args.use_scheduler:
+            lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+                initial_learning_rate=args.learning_rate,
+                decay_steps=args.decay_epochs * len(train_dataset),  # Every N epochs
+                decay_rate=args.decay_rate,
+                staircase=True
+            )
+        else:
+            lr_schedule = args.learning_rate
 
         opt = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
 
@@ -287,7 +293,6 @@ if __name__ == "__main__":
         if args.save_model and args.save_multi_checkpoint:
             # Setup callbacks
             callbacks = [
-                SchedulerandTrackerCallback(),
                 tf.keras.callbacks.ModelCheckpoint(
                     filepath=os.path.join(args.checkpoint_dir, f'{args.save_model_folder}_epoch{{epoch:03d}}', f'{args.save_model_folder}_epoch{{epoch:03d}}.keras'),
                     save_weights_only=False,
@@ -296,7 +301,7 @@ if __name__ == "__main__":
                 )
             ]
         else:
-            callbacks = [SchedulerandTrackerCallback()]
+            callbacks = []
 
         train_time_start = time()
         history = model.fit(
@@ -324,6 +329,10 @@ if __name__ == "__main__":
             
             print("Saving model to:", model_path)
             model.save(model_path)
+
+            # save configs
+            with open(os.path.join(path, 'config.json'), 'w') as f:
+                json.dump(vars(args), f, indent=4, sort_keys=True)
 
             # save history object
             history_path = os.path.join(args.checkpoint_dir, args.save_model_folder, 'history.json')
