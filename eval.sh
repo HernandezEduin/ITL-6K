@@ -1,10 +1,10 @@
 # Evaluate different trained models
 python sample_eval.py --use-cache --load-model-folder model_benchmark
-python sample_eval.py --use-cache --load-model-folder model_benchmark_epoch200
-python sample_eval.py --use-cache --load-model-folder model_benchmark_epoch400
-python sample_eval.py --use-cache --load-model-folder model_benchmark_epoch600
-python sample_eval.py --use-cache --load-model-folder model_benchmark_epoch800
-python sample_eval.py --use-cache --load-model-folder model_benchmark_epoch1000
+python sample_eval.py --use-cache --load-model-folder model_benchmark_epoch200 --save-metrics
+python sample_eval.py --use-cache --load-model-folder model_benchmark_epoch400 --save-metrics
+python sample_eval.py --use-cache --load-model-folder model_benchmark_epoch600 --save-metrics
+python sample_eval.py --use-cache --load-model-folder model_benchmark_epoch800 --save-metrics
+python sample_eval.py --use-cache --load-model-folder model_benchmark_epoch1000 --save-metrics
 python sample_eval.py --use-cache --load-model-folder model_pca --use-pca
 python sample_eval.py --use-cache --load-model-folder model_savgol --use-savgol
 python sample_eval.py --use-cache --load-model-folder model_wavelet --use-wavelet
